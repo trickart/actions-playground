@@ -1,0 +1,32 @@
+name: Create PR from issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create_pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: add line
+        run: |
+          echo {{ github.event.issue.title }} >> sample.txt
+
+      - name: push and create PR
+        run: |
+          date_string=$(date -Idate)
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "action@github.com"
+          git switch -c add-line-${date_string}
+          git add sample.txt
+          git commit -m "Add line to sample.txt"
+          git push origin add-line-${date_string}
+          gh pr create --title "Add line to sample.txt" --body "test" --base main --head add-line-${date_string}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
