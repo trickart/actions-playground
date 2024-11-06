@@ -1,0 +1,71 @@
+name: Create PR from issue
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  create_pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    if: >-
+      github.event.issue.state == 'open' &&
+      github.event.label.name == 'add-member'
+    steps:
+      - name: parse issue body
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body;
+            const parsed = body.split('\n')
+              .filter(line => line.includes(":"))
+              .reduce((accumulator, line) => {
+                const [key, value] = line.split(':').map(string => string.trim());
+                accumulator[key] = value;
+                return accumulator;
+              } , {});
+              if ('github' in parsed && 'slack' in parsed) {
+                return parsed;
+              } else {
+                console.log(parsed);
+                throw new Error('github or slack is not found');
+              }
+      - name: echo parsed
+        run: echo ${{ steps.parse.outputs.result }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: add line to users.json
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const parsed = ${{ steps.parse.outputs.result }};
+            console.log(parsed);
+
+            const fs = require('fs');
+            let users = JSON.parse(fs.readFileSync('users.json', 'utf8'));
+            users[parsed.github] = parsed.slack;
+
+            const added = JSON.stringify(users, null, 2);
+            fs.writeFileSync('users.json', added);
+
+      - name: push and create PR
+        run: |
+          echo ${{ steps.parse.outputs.result }}
+          echo ${{ fromJson(steps.parse.outputs.result) }}
+          echo ${{ fromJson(steps.parse.outputs.result).github }}
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "action@github.com"
+          git switch -c add-member-${MEMBER}
+          git add .
+          git commit -m "Add member to users.json"
+          git push origin add-member-${MEMBER}
+          # https://github.blog/changelog/2022-05-03-github-actions-prevent-github-actions-from-creating-and-approving-pull-requests/
+          gh pr create --title "Add ${MEMBER} to users.json" --body "test" --base main --head add-member-${MEMBER}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MEMBER: ${{ steps.parse.outputs.result.github }}
